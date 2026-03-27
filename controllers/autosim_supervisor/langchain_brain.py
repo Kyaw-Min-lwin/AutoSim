@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Dict, Any
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_chroma import Chroma
@@ -34,7 +35,13 @@ Rules:
 """
 
 
-def build_llm():
+def build_llm() -> ChatOpenAI:
+    """
+    Initializes and returns the language model configuration for the debugger.
+
+    Returns:
+        ChatOpenAI: The configured OpenAI chat model.
+    """
     return ChatOpenAI(
         model="gpt-5-mini",
         temperature=0.2,  # Added slight temp to prevent getting stuck in infinite loops
@@ -42,9 +49,18 @@ def build_llm():
     )
 
 
-def retrieve_context(log_data):
-    """Queries ChromaDB based on the specific failure"""
-    print("[RAG] Connecting to Vector Database...")
+def retrieve_context(log_data: Dict[str, Any]) -> str:
+    """
+    Queries the Chroma vector database to retrieve relevant hardware manual sections
+    based on the specific failure log.
+
+    Args:
+        log_data (Dict[str, Any]): The parsed JSON data from the failure log.
+
+    Returns:
+        str: Formatted context strings containing the retrieved manual sections.
+    """
+    print("Connecting to Vector Database...")
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     vector_db = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
 
@@ -53,41 +69,54 @@ def retrieve_context(log_data):
     actuators = ", ".join(log_data.get("hardware_manifest", {}).get("actuators", []))
 
     search_query = f"Error: {error_type}. {message}. Hardware involved: {actuators}. How to fix or tune this?"
-    print(f"[RAG] Querying vault for: {search_query}")
+    print(f"Executing semantic search for: '{search_query}'")
 
     docs = vector_db.similarity_search(search_query, k=3)
 
     context = ""
     for i, doc in enumerate(docs):
-        context += (
-            f"\n[Doc {i+1} from {doc.metadata.get('source')}]:\n{doc.page_content}\n"
-        )
+        context += f"\n[Document {i+1} source: {doc.metadata.get('source')}]:\n{doc.page_content}\n"
 
-    print(f"[RAG] Retrieved {len(docs)} relevant manual sections.")
+    print(f"Successfully retrieved {len(docs)} relevant manual sections.")
     return context
 
 
-def run_debugger_brain(error_file_path="auto_failure_log.json"):
-    print("[BRAIN] Loading failure context...")
+def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
+    """
+    Main execution flow to analyze a failure log, retrieve relevant context via RAG,
+    and prompt the LLM to generate an adjustment command to fix the simulation agent.
+
+    Args:
+        error_file_path (str): The file path to the JSON failure log.
+
+    Returns:
+        bool: True if a patch was successfully generated, False otherwise.
+    """
+    print("Starting automated debugging analysis...")
+    print("-" * 50)
+    print(f"Loading failure context from '{error_file_path}'...")
+
     try:
         with open(error_file_path, "r") as f:
             log_data = json.load(f)
     except FileNotFoundError:
-        print("[BRAIN] No error log found.")
+        print("Error: No error log found. Terminating process.")
         return False
 
+    # Fetch context and compact the log data for token efficiency
     rag_context = retrieve_context(log_data)
     compact_log = json.dumps(log_data, separators=(",", ":"))
-    llm = build_llm()
 
+    llm = build_llm()
     prompt = ChatPromptTemplate.from_messages(
         [("system", SYSTEM_PROMPT), ("human", "Failure log: {failure_log}")]
     )
 
     chain = prompt | llm
 
-    print("[BRAIN] Analyzing hardware, RAG manual, & mission objective...")
-
+    print(
+        "Analyzing hardware specifications, manual context, and mission objectives..."
+    )
     response = chain.invoke({"rag_context": rag_context, "failure_log": compact_log})
 
     try:
@@ -95,8 +124,8 @@ def run_debugger_brain(error_file_path="auto_failure_log.json"):
         assert "target_parameters" in result
         assert "reasoning" in result
     except Exception as e:
-        print("[BRAIN] Invalid response from model:")
-        print(response.content)
+        print("Error: Invalid or malformed response received from the language model.")
+        print(f"Raw output:\n{response.content}")
         return False
 
     adjustment_command = {
@@ -108,7 +137,9 @@ def run_debugger_brain(error_file_path="auto_failure_log.json"):
     with open("adjustment_command.json", "w") as f:
         json.dump(adjustment_command, f, indent=4)
 
-    print(f"[BRAIN] Patch Generated: {result['reasoning']}")
+    print("-" * 50)
+    print(f"Patch Generated Successfully: {result['reasoning']}")
+    print("Adjustment command saved to 'adjustment_command.json'.")
     return True
 
 

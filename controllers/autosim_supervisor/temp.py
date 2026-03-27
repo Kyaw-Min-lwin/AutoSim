@@ -11,7 +11,7 @@ def test_retriever():
     print(">>> BOOTING VECTOR DATABASE...")
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 
-    # Load the existing database (we don't pass documents this time)
+    # Load the existing database
     vector_db = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
 
     # The Test Query
