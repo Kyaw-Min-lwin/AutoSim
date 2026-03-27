@@ -1,0 +1,44 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/universal_robots/protos/UR5e.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.08382153438525669 -0.07392924030127378 0.9937345811642955 4.5809365759685114
+  position 0.6951497883341518 2.536034817002687 0.6740021607379989
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+}
+DEF UR5_ARM UR5e {
+  controller "autosim_supervisor"
+  supervisor TRUE
+  toolSlot [
+    Robotiq3fGripper {
+    }
+  ]
+}
+DEF TARGET_BALL Solid {
+  translation 0.2 0 0.05
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0 0
+      }
+      geometry Sphere {
+        radius 0.05
+      }
+    }
+  ]
+  physics Physics {
+    mass 0.1
+  }
+}

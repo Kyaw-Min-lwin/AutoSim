@@ -1,0 +1,8 @@
+{
+    "action": "update_agent_config",
+    "target_parameters": {
+        "left wheel motor": 4.0,
+        "right wheel motor": 1.0
+    },
+    "reasoning": "Robot hit the +x boundary after backing up. Previous patches either backed up or rotated in place and increased distance. Use asymmetric forward velocities (both positive, left > right) to drive forward while curving toward the target, reducing distance without backing into the boundary."
+}

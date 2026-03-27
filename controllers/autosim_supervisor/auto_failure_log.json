@@ -1,0 +1,85 @@
+{
+    "timestamp": 1774594476.632497,
+    "simulation_tick": 175,
+    "error_type": "BoundaryCollision",
+    "message": "Robot collided with boundary.",
+    "mission_objective": {
+        "goal": "reach_target",
+        "target_position": {
+            "x": 2.0,
+            "y": 2.0
+        },
+        "current_distance": 2.5290803960802912
+    },
+    "hardware_manifest": {
+        "actuators": [
+            "left wheel motor",
+            "right wheel motor"
+        ],
+        "sensors": [
+            "ps0",
+            "ps1",
+            "ps2",
+            "ps3",
+            "ps4",
+            "ps5",
+            "ps6",
+            "ps7"
+        ]
+    },
+    "agent_state": {
+        "position": {
+            "x": 0.45201842344907167,
+            "y": -1.721241286501217e-07,
+            "z": -6.39420975093348e-05
+        }
+    },
+    "sensor_data": {
+        "distance_sensors": {
+            "ps0": 67.08850436831958,
+            "ps1": 67.20780720760186,
+            "ps2": 62.47972934045531,
+            "ps3": 68.90883857710206,
+            "ps4": 69.1388653554828,
+            "ps5": 65.09945903976542,
+            "ps6": 64.61426628418808,
+            "ps7": 66.79570907659075
+        }
+    },
+    "environment_context": {
+        "grid_boundaries": {
+            "max_x": 0.45,
+            "max_y": 0.45
+        }
+    },
+    "failed_attempts": [
+        {
+            "patch_applied": {
+                "left wheel motor": 2.0,
+                "right wheel motor": 5.0
+            },
+            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+        },
+        {
+            "patch_applied": {
+                "left wheel motor": 2.0,
+                "right wheel motor": -2.0
+            },
+            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+        },
+        {
+            "patch_applied": {
+                "left wheel motor": 1.5,
+                "right wheel motor": 3.5
+            },
+            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+        },
+        {
+            "patch_applied": {
+                "left wheel motor": -3.0,
+                "right wheel motor": -1.0
+            },
+            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+        }
+    ]
+}
