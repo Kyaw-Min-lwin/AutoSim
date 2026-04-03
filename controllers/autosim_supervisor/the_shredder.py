@@ -1,89 +1,119 @@
 import os
 import json
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_core.documents import Document
+import subprocess
+from langchain_text_splitters import (
+    MarkdownHeaderTextSplitter,
+    RecursiveCharacterTextSplitter,
+)
 
+# Directory Setup
 DOCS_DIR = "./docs"
 OUTPUT_FILE = "shredded_rag_chunks.json"
+MARKER_OUTPUT_DIR = "./marker_temp"  # Temp dir for Marker's markdown output
 
 
-def clean_text(text: str) -> str:
+def extract_markdown_with_marker(filepath: str, filename: str) -> str:
     """
-    Cleans the input text by filtering out noise, short strings, and irrelevant content.
-
-    Args:
-        text (str): The raw text to be cleaned.
-
-    Returns:
-        str: The cleaned text, reconstructed with valid lines.
+    Uses the open-source `marker-pdf` CLI to extract Markdown and LaTeX equations.
     """
-    lines = text.splitlines()
-    cleaned = []
+    print(f"  -> Running Marker OCR/Vision pipeline on {filename}...")
 
-    for line in lines:
-        line = line.strip()
+    # Ensure temp directory exists
+    os.makedirs(MARKER_OUTPUT_DIR, exist_ok=True)
 
-        # Filter out empty lines or short noise (less than 40 characters)
-        if not line:
-            continue
-        if len(line) < 40:
-            continue
+    # Marker creates a folder named after the file (minus extension)
+    base_name = os.path.splitext(filename)[0]
+    output_md_path = os.path.join(MARKER_OUTPUT_DIR, base_name, f"{base_name}.md")
 
-        # Filter out lines containing specific exclusionary keywords
-        if "copyright" in line.lower():
-            continue
-        if "figure" in line.lower():
-            continue
+    # Command to run marker (uses your GPU/CPU to run deep learning OCR)
+    # We call it via subprocess to keep our main Python memory clean
+    command = [
+        "marker_single",
+        filepath,
+        MARKER_OUTPUT_DIR,
+        "--batch_multiplier",
+        "1",  # Adjust based on your VRAM
+        "--extract_images",
+        "false",  # We just want text/math for the RAG
+    ]
 
-        cleaned.append(line)
+    try:
+        # Run the VLM pipeline
+        subprocess.run(
+            command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
-    return "\n".join(cleaned)
+        # Read the generated Markdown
+        if os.path.exists(output_md_path):
+            with open(output_md_path, "r", encoding="utf-8") as f:
+                return f.read()
+        else:
+            print(f"  -> Warning: Marker failed to output markdown for {filename}")
+            return ""
+
+    except subprocess.CalledProcessError as e:
+        print(f"  -> Error running Marker on {filename}: {e}")
+        return ""
 
 
-def smart_chunk(text: str, max_words: int = 200) -> list:
+def structural_chunk(markdown_text: str) -> list:
     """
-    Splits text into manageable chunks based on paragraphs and word counts,
-    ensuring each chunk maintains a meaningful size.
-
-    Args:
-        text (str): The cleaned text to be chunked.
-        max_words (int): The maximum number of words allowed per chunk.
-
-    Returns:
-        list: A list of text chunks.
+    Splits text semantically based on Markdown headers, keeping context and math intact.
+    Falls back to RecursiveCharacter splitting for ridiculously long sections.
     """
-    paragraphs = text.split("\n\n")
-    chunks = []
+    if not markdown_text.strip():
+        return []
 
-    for p in paragraphs:
-        words = p.split()
+    # 1. Define the headers we want to split on
+    headers_to_split_on = [
+        ("#", "Header 1"),
+        ("##", "Header 2"),
+        ("###", "Header 3"),
+    ]
 
-        # Skip paragraphs that are too short to be meaningful
-        if len(words) < 40:
-            continue
+    # Initialize the structural splitter
+    markdown_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=headers_to_split_on,
+        strip_headers=False,  # Keep the headers in the text so the LLM knows what it's reading
+    )
 
-        # Safely split larger paragraphs into specified max_words increments
-        for i in range(0, len(words), max_words):
-            chunk = " ".join(words[i : i + max_words])
+    # Chunk by structure!
+    md_header_splits = markdown_splitter.split_text(markdown_text)
 
-            # Ensure the resulting chunk meets the minimum length requirement
-            if len(chunk.split()) < 40:
-                continue
+    # 2. Safety Net: If a specific section (e.g., a massive math derivation) is STILL
+    # too large for an embedding model, we gently split it by character, prioritizing paragraphs.
+    chunk_size = 1500
+    chunk_overlap = 150
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=[
+            "\n\n",
+            "\n",
+            " ",
+            "",
+        ],  # Will not split inside a paragraph unless absolutely necessary
+    )
 
-            chunks.append(chunk.strip())
+    final_chunks = text_splitter.split_documents(md_header_splits)
 
-    return chunks
+    # Return as list of string contents with their metadata (which headers they belong to)
+    return [
+        {
+            "content": chunk.page_content,
+            "metadata": chunk.metadata,  # Contains dict like {"Header 1": "Introduction"}
+        }
+        for chunk in final_chunks
+    ]
 
 
 def shred_documents():
     """
-    Main execution pipeline to process documents from the input directory,
-    clean and chunk their contents, and save the structured output to a JSON file.
+    Main execution pipeline.
     """
-    print("Starting document processing job...")
+    print("Starting document processing job... (VLM Edition)")
     print("-" * 50)
 
-    # Initialize input directory if it does not exist
     if not os.path.exists(DOCS_DIR):
         os.makedirs(DOCS_DIR)
         print(
@@ -93,62 +123,70 @@ def shred_documents():
 
     all_chunks = []
 
-    # Iterate through all files in the designated directory
     for filename in os.listdir(DOCS_DIR):
         filepath = os.path.join(DOCS_DIR, filename)
 
-        # Process PDF files
+        # Process PDF files with Marker
         if filename.endswith(".pdf"):
             print(f"Processing PDF file: {filename}")
-            loader = PyPDFLoader(filepath)
-            pages = loader.load()
 
-            for page in pages:
-                cleaned = clean_text(page.page_content)
-                chunks = smart_chunk(cleaned)
+            # Step 1: Use Vision/OCR models to get pure Markdown + LaTeX
+            markdown_text = extract_markdown_with_marker(filepath, filename)
 
-                for c in chunks:
-                    all_chunks.append({"source": filename, "type": "pdf", "content": c})
+            # Step 2: Chunk structurally
+            structural_chunks = structural_chunk(markdown_text)
 
-        # Process JSON files (expects pre-cleaned/structured data)
+            for c in structural_chunks:
+                all_chunks.append(
+                    {
+                        "source": filename,
+                        "type": "pdf",
+                        "headers": c["metadata"],
+                        "content": c["content"],
+                    }
+                )
+
+        # Process JSON files
         elif filename.endswith(".json"):
             print(f"Processing JSON file: {filename}")
             with open(filepath, "r", encoding="utf-8") as f:
                 try:
                     data = json.load(f)
-
                     for item in data:
                         content = item.get("content", "")
                         source = item.get("source", filename)
 
-                        cleaned = clean_text(content)
-                        chunks = smart_chunk(cleaned)
+                        # If the JSON contains markdown, structurally chunk it!
+                        chunks = structural_chunk(content)
 
                         for c in chunks:
                             all_chunks.append(
-                                {"source": source, "type": "json", "content": c}
+                                {
+                                    "source": source,
+                                    "type": "json",
+                                    "headers": c["metadata"],
+                                    "content": c["content"],
+                                }
                             )
-
                 except Exception as e:
                     print(f"Error processing JSON file '{filename}': {e}")
 
-    # Halt execution if no valid chunks were generated
     if not all_chunks:
         print(
             "Warning: No usable text chunks were extracted from the provided documents."
         )
         return
 
-    # Assign unique identifiers to each chunk for downstream processing
     for i, chunk in enumerate(all_chunks):
         chunk["chunk_id"] = i
 
-    # Write the final payload to the output file
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(all_chunks, f, indent=2)
 
     print("-" * 50)
-    print(f"Processing complete. Successfully generated {len(all_chunks)} chunks.")
+    print(
+        f"Processing complete. Successfully generated {len(all_chunks)} semantically intact chunks."
+    )
     print(f"Output written to: {OUTPUT_FILE}")
 
 
