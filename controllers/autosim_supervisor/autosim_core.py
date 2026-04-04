@@ -203,7 +203,7 @@ class DiagnosticEngine:
 
 class EpisodeRecorder:
     """
-    Phase 1(iv): Compresses thousands of ticks into a lightweight LLM-friendly summary.
+    Compresses thousands of ticks into a lightweight LLM-friendly summary.
     Tracks max extremes and downsamples the trajectory with temporal tracking.
     """
 
@@ -216,7 +216,7 @@ class EpisodeRecorder:
         self.max_speed = 0.0
         self.max_jerk = 0.0
         self.max_wobble = 0.0
-        # CRITIQUE 2 FIX: Enforce strict trajectory bound to protect LLM Context Window
+        # Enforce strict trajectory bound to protect LLM Context Window
         self.trajectory_sample = deque(maxlen=self.max_breadcrumbs)
 
     def record_tick(self, pos: List[float], features: Dict[str, Any]):
@@ -224,8 +224,8 @@ class EpisodeRecorder:
 
         # Downsample: Save position only once every 20 ticks
         if self.tick_count % 20 == 0:
-            # CRITIQUE 4 FIX: Added tick_count as the first element for temporal awareness
-            # CRITIQUE 3 REBUTTAL: [p for p in pos] handles N-dimensions perfectly fine.
+            #  Added tick_count as the first element for temporal awareness
+            #  [p for p in pos] handles N-dimensions perfectly fine.
             breadcrumb = [self.tick_count] + [round(p, 3) for p in pos]
             self.trajectory_sample.append(breadcrumb)
 
