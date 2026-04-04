@@ -231,7 +231,7 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
 
     # The main logic LLM, strictly bound to JSON output
     main_llm = ChatOpenAI(
-        model="gpt-4o-mini",  # Welcome to the future. Use gpt-4o or gpt-4-turbo if preferred!
+        model="gpt-5-mini",
         temperature=0.1,
         model_kwargs={"response_format": {"type": "json_object"}},
     )
