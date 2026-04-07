@@ -4,6 +4,7 @@ import time
 import sys
 import subprocess
 from typing import Dict, Any, List
+import requests  # ✅ added
 
 # --- IMPORT OUR NEW DECOUPLED STACK ---
 from autosim_core import TelemetryTracker, DiagnosticEngine, EpisodeRecorder
@@ -51,7 +52,6 @@ if not actuators:
     supervisor.simulationSetMode(Supervisor.SIMULATION_MODE_PAUSE)
     sys.exit(1)
 
-# CRITIQUE 5 FIX: Safely map motors by name instead of assuming index order
 left_motor_name = next(
     (n for n in manifest["actuators"] if "left" in n.lower()), manifest["actuators"][0]
 )
@@ -60,20 +60,13 @@ right_motor_name = next(
     manifest["actuators"][-1],
 )
 
-# Initialize decoupled logic engines
 dt_seconds = TIME_STEP / 1000.0
 telemetry = TelemetryTracker(dt_seconds=dt_seconds, window_size=15)
 diagnostician = DiagnosticEngine()
 episode_recorder = EpisodeRecorder()
 
-# ==========================================
-# Step 2: Save Initial State
-# ==========================================
 robot_node.saveState("tick_0")
 
-# ==========================================
-# Step 3: Instantiate Initial Skill (Unoptimized Baseline)
-# ==========================================
 current_skill = DriveToTargetSkill(
     kp=0.5,
     ki=0.0,
@@ -98,12 +91,10 @@ while supervisor.step(TIME_STEP) != -1:
     rotation = rotation_field.getSFRotation()
     current_motor_vels = [m.getVelocity() for m in actuators.values()]
 
-    # Update Math & Logging Engines
     telemetry.record_state(position, rotation, current_motor_vels)
     current_features = telemetry.get_features(TARGET)
     episode_recorder.record_tick(position, current_features)
 
-    # Ask the Skill for the next motor commands
     motor_commands = current_skill.step(
         pos=position,
         rot=rotation,
@@ -112,12 +103,10 @@ while supervisor.step(TIME_STEP) != -1:
         dt=dt_seconds,
     )
 
-    # Apply Layer 7 Execution (Execute the validated commands)
     for actuator_name, velocity in motor_commands.items():
         if actuator_name in actuators:
             actuators[actuator_name].setVelocity(velocity)
 
-    # Check for Failures
     is_failure, err_type, err_message = diagnostician.evaluate_state(
         position, current_features, telemetry.ready, current_motor_vels
     )
@@ -138,12 +127,10 @@ while supervisor.step(TIME_STEP) != -1:
         print(f"\n[DIAGNOSTIC TRIGGER] Tick {tick} | Type: {err_type}")
         print(f"Details: {err_message}")
 
-        # CRITIQUE 3 FIX: Safe infinity fallback instead of 0
         initial_distance = current_features.get("spatial", {}).get(
             "distance_to_goal_m", float("inf")
         )
 
-        # Halt agent
         for name, motor in actuators.items():
             motor.setVelocity(0)
 
@@ -151,9 +138,6 @@ while supervisor.step(TIME_STEP) != -1:
         MAX_RETRIES = 5
         mission_accomplished = False
 
-        # ==========================================
-        # Step 5: Active Debugging Loop
-        # ==========================================
         for attempt in range(1, MAX_RETRIES + 1):
             print(f"\nInitiating tuning phase: Attempt {attempt} of {MAX_RETRIES}...")
 
@@ -187,19 +171,19 @@ while supervisor.step(TIME_STEP) != -1:
                 json.dump(log, f, indent=4)
 
             try:
-                subprocess.run(
-                    [r"D:\AutoSim\venv\Scripts\python.exe", "langchain_brain.py"],
-                    check=True,
+                # ✅ REPLACED subprocess WITH API CALL
+                response = requests.post(
+                    "http://127.0.0.1:8000/brain",
+                    json={"log": log},
+                    timeout=15
                 )
-
-                with open("adjustment_command.json", "r") as f:
-                    command = json.load(f)
+                response.raise_for_status()
+                command = response.json()
 
                 tuning_params = command.get("target_parameters", {})
                 print(f"AI Reasoning: {command.get('reasoning')}")
                 print(f"Applying new Skill Parameters: {tuning_params}")
 
-                # Rewind and Reset Engines
                 robot_node.loadState("tick_0")
                 telemetry = TelemetryTracker(dt_seconds=dt_seconds, window_size=15)
                 episode_recorder.reset()
@@ -213,9 +197,6 @@ while supervisor.step(TIME_STEP) != -1:
                     right_motor_name=right_motor_name,
                 )
 
-                # ==========================================
-                # Step 6: Outcome Evaluation
-                # ==========================================
                 survived_crash = True
                 for t in range(1, 1000):
                     if supervisor.step(TIME_STEP) == -1:
@@ -251,13 +232,9 @@ while supervisor.step(TIME_STEP) != -1:
 
                 if not survived_crash:
                     fail_reason = (
-                        test_msg
-                        if test_fail
-                        else "Skill destabilized and self-aborted."
+                        test_msg if test_fail else "Skill destabilized and self-aborted."
                     )
-                    print(
-                        f"Outcome A (Failure): Agent triggered another error. Re-evaluating..."
-                    )
+                    print("Outcome A (Failure): Agent triggered another error.")
                     failed_attempts.append(
                         {"patch_applied": tuning_params, "failure_reason": fail_reason}
                     )
@@ -267,33 +244,26 @@ while supervisor.step(TIME_STEP) != -1:
                         "distance_to_goal_m", float("inf")
                     )
 
-                    # CRITIQUE 6 FIX: Cleaned up the outcome logic tree
                     if test_skill_status == SkillStatus.SUCCESS:
-                        print(
-                            "Outcome C (Absolute Success): Agent successfully reached the target using tuned parameters!"
-                        )
+                        print("Outcome C (Absolute Success)")
                         mission_accomplished = True
                         break
                     elif new_distance >= initial_distance:
-                        print(
-                            "Outcome B (Suboptimal): Agent survived but moved away from target."
-                        )
+                        print("Outcome B (Suboptimal)")
                         failed_attempts.append(
                             {
                                 "patch_applied": tuning_params,
-                                "failure_reason": "Distance increased. Turn towards target.",
+                                "failure_reason": "Distance increased.",
                             }
                         )
                         continue
                     else:
-                        print(
-                            "Outcome C (Partial Success): Agent improved proximity to target but ran out of evaluation time."
-                        )
+                        print("Outcome C (Partial Success)")
                         mission_accomplished = True
                         break
 
             except Exception as e:
-                print(f"Error: AI Debugger failed: {e}")
+                print(f"Error: API call failed: {e}")
                 break
 
         if mission_accomplished:
