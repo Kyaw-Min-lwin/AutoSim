@@ -17,7 +17,7 @@ robot_node = supervisor.getFromDef("E_PUCK")
 translation_field = robot_node.getField("translation")
 rotation_field = robot_node.getField("rotation")
 
-TARGET = [2.0, 2.0, 0.0]
+TARGET = [0.8, 0.8, 0.0]
 
 print("-" * 50)
 print("Initializing AutoSim Skill-Based Autonomy Engine...")
@@ -65,13 +65,20 @@ telemetry = TelemetryTracker(dt_seconds=dt_seconds, window_size=15)
 diagnostician = DiagnosticEngine()
 episode_recorder = EpisodeRecorder()
 
+# ==========================================
+# Step 2: Save Initial State
+# ==========================================
+# Let the robot drop to the floor and settle for 20 ticks
+for _ in range(20):
+    supervisor.step(TIME_STEP)
+
 robot_node.saveState("tick_0")
 
 current_skill = DriveToTargetSkill(
     kp=0.5,
     ki=0.0,
     kd=0.0,
-    base_speed=5.0,
+    base_speed=3.0,
     left_motor_name=left_motor_name,
     right_motor_name=right_motor_name,
 )
@@ -101,6 +108,7 @@ while supervisor.step(TIME_STEP) != -1:
         features=current_features,
         target=TARGET,
         dt=dt_seconds,
+        is_telemetry_ready=telemetry.ready,
     )
 
     for actuator_name, velocity in motor_commands.items():
@@ -185,6 +193,13 @@ while supervisor.step(TIME_STEP) != -1:
                 print(f"Applying new Skill Parameters: {tuning_params}")
 
                 robot_node.loadState("tick_0")
+                # We MUST command the motors to stop and step the simulation
+                # so Webots visually updates the UI and physically settles the robot.
+                for name, motor in actuators.items():
+                    motor.setVelocity(0.0)
+                # Step the simulation a few times to render the reset on your screen
+                for _ in range(5):
+                    supervisor.step(TIME_STEP)
                 telemetry = TelemetryTracker(dt_seconds=dt_seconds, window_size=15)
                 episode_recorder.reset()
 
@@ -211,7 +226,12 @@ while supervisor.step(TIME_STEP) != -1:
                     episode_recorder.record_tick(test_pos, test_features)
 
                     test_motor_commands = current_skill.step(
-                        test_pos, test_rot, test_features, TARGET, dt_seconds
+                        test_pos,
+                        test_rot,
+                        test_features,
+                        TARGET,
+                        dt_seconds,
+                        is_telemetry_ready=telemetry.ready,
                     )
                     for act_name, vel in test_motor_commands.items():
                         if act_name in actuators:

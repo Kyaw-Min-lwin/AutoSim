@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 load_dotenv()
 
 DB_DIR = "./chroma_db"
-BM25_FILE = "bm25_retriever.pkl"
+BM25_FILE = "./bm25_retriever.pkl"
 MAX_CHARS_PER_DOC = 800  # Token explosion safety cap to keep the LLM focused
 
 # ==========================================
@@ -64,13 +64,14 @@ You no longer control raw motor velocities. You are a Systems Engineer tuning hi
 
 Analyze the provided JSON failure log, which includes Episode Summaries and Failure Diagnostics.
 Identify the root cause of the failure and output ONLY a valid JSON object with:
+
 {{
   "selected_skill": "DriveToTargetSkill",
   "target_parameters": {{
-      "kp": float (Proportional gain for heading adjustment),
-      "ki": float (Integral gain for heading adjustment),
-      "kd": float (Derivative damping for heading adjustment),
-      "base_speed": float (Forward velocity)
+      "kp": float,
+      "ki": float,
+      "kd": float,
+      "base_speed": float
   }},
   "reasoning": "short explanation of why you tuned these specific parameters based on the episode summary"
 }}
@@ -79,11 +80,14 @@ Rules:
 - Do NOT output anything except valid JSON.
 - Currently, the only available skill is "DriveToTargetSkill".
 - CRITICAL: Read the 'error_type' and 'message' from the diagnostic engine.
-    - If 'DynamicInstability' (wobble) or 'Thrashing', you MUST reduce 'kp' and increase 'kd' (damping).
-    - If 'SevereDrift', your 'kp' might be too low to overcome momentum, or 'base_speed' is too fast to turn cleanly.
-    - If 'KineticStagnation', your 'base_speed' is too low to overcome friction, or you are stuck.
-- Review the 'failed_attempts' array. It tells you exactly why your previous PID tuning failed. Learn from it.
-- Use the REFERENCE MANUAL below to calculate exact limits, understand the physical constraints, or read up on PID tuning theory.
+    - If 'DynamicInstability' (wobble) or 'Thrashing', you MUST reduce 'kp' and increase 'kd'.
+    - If kd becomes too large and thrashing persists:
+    → reduce kd (noise amplification likely)
+    → slightly increase kp instead
+    - If 'SevereDrift', your 'kp' might be too low or 'base_speed' too high.
+    - If 'KineticStagnation', your 'base_speed' is too low or robot is stuck.
+- Review the 'failed_attempts' array and learn from previous failures.
+- Use the REFERENCE MANUAL below for constraints and PID tuning guidance.
 
 === REFERENCE MANUAL ===
 {rag_context}
@@ -236,9 +240,8 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
         model_kwargs={"response_format": {"type": "json_object"}},
     )
 
-    formatted_system_prompt = SYSTEM_PROMPT.format(rag_context=rag_context)
     prompt = ChatPromptTemplate.from_messages(
-        [("system", formatted_system_prompt), ("human", "Failure log: {failure_log}")]
+        [("system", SYSTEM_PROMPT), ("human", "Failure log: {failure_log}")]
     )
 
     chain = prompt | main_llm
@@ -246,7 +249,7 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
     logging.info(
         "Synthesizing telemetry, analyzing physics, and calculating optimal PID patch..."
     )
-    response = chain.invoke({"failure_log": compact_log})
+    response = chain.invoke({"failure_log": compact_log, "rag_context": rag_context})
 
     try:
         # Safely strip Markdown formatting that LLMs love to sneak in, avoiding syntax errors

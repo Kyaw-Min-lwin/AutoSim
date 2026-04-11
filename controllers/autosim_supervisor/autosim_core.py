@@ -132,13 +132,13 @@ class DiagnosticEngine:
     """Pre-classifies state failures based on mathematically derived telemetry thresholds."""
 
     def __init__(self):
-        self.boundary_limit = 0.45
-        self.min_speed = 0.01
+        self.boundary_limit = 0.95
+        self.min_speed = 0.03
         self.drift_speed_min = 0.05
         self.fleeing_alignment = -0.5
         self.max_wobble = 0.5
         self.max_jerk = 50.0
-        self.stuck_effort_min = 1.0
+        self.stuck_effort_min = 0.6
 
     def evaluate_state(
         self,
@@ -164,9 +164,18 @@ class DiagnosticEngine:
         )
 
         current_effort = sum(abs(v) for v in current_motor_vels)
+
+        # Check if the robot is actually rotating before calling it stuck
+        rot_vol = h.get("rotational_volatility", 0)
+        alignment = s.get("target_alignment_score", 0)
+        speed = k.get("speed_m_s", 0)
+
+        is_meaningful_rotation = rot_vol > 0.02
+
         if (
-            k.get("speed_m_s", 0) < self.min_speed
+            speed < self.min_speed
             and current_effort > self.stuck_effort_min
+            and not (is_meaningful_rotation and alignment > 0.2)
         ):
             return (
                 True,

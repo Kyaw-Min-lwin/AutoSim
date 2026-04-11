@@ -3,42 +3,58 @@
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/universal_robots/protos/UR5e.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/gctronic/e-puck/protos/E-puck.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/containers/protos/WoodenBox.proto"
 
 WorldInfo {
 }
 Viewpoint {
-  orientation -0.2811312289428089 0.10651113069067582 0.9537403268983125 2.448120028402603
-  position 2.970192158252729 -2.2414626040721704 2.469951620274563
+  orientation -0.13290750584509553 -0.0576312730630335 0.9894514799903882 3.952198141371949
+  position 2.450968904672031 2.460378840235136 0.7060501203872045
 }
 TexturedBackground {
 }
 TexturedBackgroundLight {
 }
 RectangleArena {
+  translation 1 1 0
+  floorSize 2 2
 }
-DEF UR5_ARM UR5e {
+DEF E_PUCK E-puck {
+  hidden rotation_1 0 1 0 0.2003320205801962
+  hidden rotation_2 0 1 0 0.20033202058020952
+  translation 0.100069 0.1 0.05
+  rotation 0.0003597019050916735 0.9999999303142495 9.993015409609809e-05 6.23947235743399e-06
   controller "autosim_supervisor"
   supervisor TRUE
-  toolSlot [
-    Robotiq3fGripper {
-    }
-  ]
 }
-DEF TARGET_BALL Solid {
-  translation 0.2 0 0.05
+WoodenBox {
+  translation 1 1 0.05
+  size 0.1 0.1 0.1
+}
+WoodenBox {
+  translation 0.1 1 0.05
+  name "wooden box(2)"
+  size 0.1 0.1 0.1
+}
+WoodenBox {
+  translation 1.8 1 0.05
+  name "wooden box(1)"
+  size 0.1 0.1 0.1
+}
+Pose {
+  translation 0.8 0.8 0
   children [
     Shape {
-      appearance PBRAppearance {
-        baseColor 1 0 0
+      appearance Appearance {
+        material Material {
+          diffuseColor 0 1 0
+        }
       }
-      geometry Sphere {
-        radius 0.05
+      geometry Cylinder {
+        height 0.01
+        radius 0.1
       }
     }
   ]
-  physics Physics {
-    mass 0.1
-  }
 }

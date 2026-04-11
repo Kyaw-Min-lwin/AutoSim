@@ -24,6 +24,7 @@ class Skill:
         features: Dict[str, Any],
         target: List[float],
         dt: float,
+        is_telemetry_ready: bool = True,
     ) -> Dict[str, float]:
         """Executes one tick of logic and returns a dictionary of actuator commands."""
         raise NotImplementedError
@@ -85,6 +86,7 @@ class DriveToTargetSkill(Skill):
         features: Dict[str, Any],
         target: List[float],
         dt: float,
+        is_telemetry_ready: bool = True,
     ) -> Dict[str, float]:
         """
         The core execution loop.
@@ -99,19 +101,20 @@ class DriveToTargetSkill(Skill):
         if not features or not pos or len(pos) < 2 or not target or len(target) < 2:
             return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
 
-        # CRITIQUE 3 FIX: Self-Reporting Failure
-        # If the skill realizes it is violently unstable, it aborts itself.
-        wobble = features.get("system_health", {}).get("rotational_volatility", 0)
-        if wobble > 0.5:
-            self.status = SkillStatus.FAILURE
-            return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
+        # Self-Reporting Failure
+        if is_telemetry_ready:
+            # If the skill realizes it is violently unstable, it aborts itself.
+            wobble = features.get("system_health", {}).get("rotational_volatility", 0)
+            if wobble > 0.5:
+                self.status = SkillStatus.FAILURE
+                return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
 
-        # 2. Check Objective Success
-        dist = features.get("spatial", {}).get("distance_to_goal_m", float("inf"))
-        if dist < self.distance_threshold:
-            self.status = SkillStatus.SUCCESS
-            # Send a stop command as the final action
-            return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
+            # 2. Check Objective Success
+            dist = features.get("spatial", {}).get("distance_to_goal_m", float("inf"))
+            if dist < self.distance_threshold:
+                self.status = SkillStatus.SUCCESS
+                # Send a stop command as the final action
+                return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
 
         # 3. Extract spatial math parameters
         current_yaw_rad = self._get_yaw_from_webots_rot(rot)

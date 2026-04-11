@@ -1,15 +1,14 @@
 {
-    "timestamp": 1774594476.632497,
-    "simulation_tick": 175,
-    "error_type": "BoundaryCollision",
-    "message": "Robot collided with boundary.",
+    "timestamp": 1775304201.7979753,
+    "error_type": "KineticStagnation",
+    "message": "Motors are driving (Effort: 6.00), but speed is negligible. Agent is stuck.",
     "mission_objective": {
         "goal": "reach_target",
-        "target_position": {
-            "x": 2.0,
-            "y": 2.0
-        },
-        "current_distance": 2.5290803960802912
+        "target_position": [
+            0.8,
+            0.8,
+            0.0
+        ]
     },
     "hardware_manifest": {
         "actuators": [
@@ -27,59 +26,84 @@
             "ps7"
         ]
     },
-    "agent_state": {
-        "position": {
-            "x": 0.45201842344907167,
-            "y": -1.721241286501217e-07,
-            "z": -6.39420975093348e-05
+    "current_crash_state": {
+        "raw_position": {
+            "x": 0.28090622265666026,
+            "y": 0.036803777238729136,
+            "z": -6.811774353863813e-05
+        },
+        "sensor_data": {
+            "ps0": 61.51960268930723,
+            "ps1": 66.10272380408864,
+            "ps2": 70.15257188026881,
+            "ps3": 67.25049397686725,
+            "ps4": 66.40422134923155,
+            "ps5": 64.83718585565549,
+            "ps6": 61.05564329346518,
+            "ps7": 64.75782855887331
         }
     },
-    "sensor_data": {
-        "distance_sensors": {
-            "ps0": 67.08850436831958,
-            "ps1": 67.20780720760186,
-            "ps2": 62.47972934045531,
-            "ps3": 68.90883857710206,
-            "ps4": 69.1388653554828,
-            "ps5": 65.09945903976542,
-            "ps6": 64.61426628418808,
-            "ps7": 66.79570907659075
+    "engineered_features": {
+        "kinematics": {
+            "speed_m_s": 0.0293,
+            "acceleration_m_s2": 0.1138,
+            "jerk_m_s3": 0.0581
+        },
+        "spatial": {
+            "distance_to_goal_m": 0.923,
+            "target_alignment_score": -0.141
+        },
+        "system_health": {
+            "actuator_effort_penalty": 16.5299,
+            "rotational_volatility": 0.024296
         }
     },
-    "environment_context": {
-        "grid_boundaries": {
-            "max_x": 0.45,
-            "max_y": 0.45
-        }
+    "episode_summary": {
+        "episode_duration_ticks": 15,
+        "final_distance_to_target_m": 0.923,
+        "extremes": {
+            "max_speed_m_s": 0.008,
+            "max_jerk_m_s3": 12.938,
+            "max_wobble": 0.667
+        },
+        "trajectory_breadcrumbs": []
     },
     "failed_attempts": [
         {
             "patch_applied": {
-                "left wheel motor": 2.0,
-                "right wheel motor": 5.0
+                "kp": 1.8,
+                "ki": 0.05,
+                "kd": 0.15,
+                "base_speed": 0.18
             },
-            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+            "failure_reason": "Motors are driving (Effort: 3.00), but speed is negligible. Agent is stuck."
         },
         {
             "patch_applied": {
-                "left wheel motor": 2.0,
-                "right wheel motor": -2.0
+                "kp": 2.2,
+                "ki": 0.08,
+                "kd": 0.18,
+                "base_speed": 0.35
             },
-            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+            "failure_reason": "Motors are driving (Effort: 3.68), but speed is negligible. Agent is stuck."
         },
         {
             "patch_applied": {
-                "left wheel motor": 1.5,
-                "right wheel motor": 3.5
+                "kp": 2.8,
+                "ki": 0.06,
+                "kd": 0.18,
+                "base_speed": 0.6
             },
-            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+            "failure_reason": "Motors are driving (Effort: 4.66), but speed is negligible. Agent is stuck."
         },
         {
             "patch_applied": {
-                "left wheel motor": -3.0,
-                "right wheel motor": -1.0
+                "kp": 3.5,
+                "ki": 0.04,
+                "kd": 0.2,
+                "base_speed": 1.0
             },
-            "failure_reason": "Cowardice: Distance to target increased from 2.529m to 2.826m. You are backing up forever. Use asymmetric velocities (e.g. left: 2, right: -2) to turn towards the objective."
+            "failure_reason": "Motors are driving (Effort: 5.79), but speed is negligible. Agent is stuck."
         }
     ]
 }
