@@ -3,7 +3,9 @@ import os
 import pickle
 import logging
 from typing import Dict, Any, List, Tuple
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+# Note to add groq and google ai studio api keys to .env file
+from langchain_groq import ChatGroq
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_chroma import Chroma
 from langchain_classic.retrievers.ensemble import EnsembleRetriever
@@ -37,11 +39,13 @@ def get_retrievers():
 
     if _EMBEDDINGS is None:
         logging.info("Initializing OpenAI Embeddings...")
-        _EMBEDDINGS = OpenAIEmbeddings(model="text-embedding-3-small")
+        _EMBEDDINGS = GoogleGenerativeAIEmbeddings(
+            model="models/gemini-embedding-001")
 
     if _CHROMA_DB is None:
         logging.info("Connecting to Chroma Vector Database...")
-        _CHROMA_DB = Chroma(persist_directory=DB_DIR, embedding_function=_EMBEDDINGS)
+        _CHROMA_DB = Chroma(persist_directory=DB_DIR,
+                            embedding_function=_EMBEDDINGS)
 
     if _BM25_RETRIEVER is None:
         logging.info(f"Loading BM25 Sparse Retriever from {BM25_FILE}...")
@@ -49,7 +53,8 @@ def get_retrievers():
             with open(BM25_FILE, "rb") as f:
                 _BM25_RETRIEVER = pickle.load(f)
         except FileNotFoundError:
-            logging.error(f"'{BM25_FILE}' not found. Run hybrid_db_populator.py first.")
+            logging.error(
+                f"'{BM25_FILE}' not found. Run hybrid_db_populator.py first.")
             return None, None
 
     # We ask Chroma for a few extra docs here so our Ensemble has options
@@ -108,7 +113,7 @@ Do NOT solve the problem. Instead, write a hypothetical, highly technical textbo
 # 3. ADVANCED RETRIEVAL LOGIC
 # ==========================================
 def generate_hyde_document(
-    log_data: Dict[str, Any], llm: ChatOpenAI
+    log_data: Dict[str, Any], llm: ChatGroq
 ) -> Tuple[str, str]:
     """Generates a hypothetical ideal document to use as the embedding search query."""
     error_type = log_data.get("error_type", "Unknown Error")
@@ -130,7 +135,8 @@ def generate_hyde_document(
 
     logging.info("Generating HyDE (Hypothetical Document Embedding)...")
     hypo_doc = chain.invoke(
-        {"error_type": error_type, "message": message, "failed_context": failed_context}
+        {"error_type": error_type, "message": message,
+            "failed_context": failed_context}
     ).content
 
     logging.info(f"HyDE Output Generated (Snippet): {hypo_doc[:100]}...")
@@ -152,7 +158,8 @@ def rerank_documents(docs: List[Document], top_k: int = 3) -> List[Document]:
         # This prevents the final GPT prompt from exploding and confusing the model.
         if len(doc.page_content) > MAX_CHARS_PER_DOC:
             doc.page_content = (
-                doc.page_content[:MAX_CHARS_PER_DOC] + "... [TRUNCATED FOR EFFICIENCY]"
+                doc.page_content[:MAX_CHARS_PER_DOC] +
+                "... [TRUNCATED FOR EFFICIENCY]"
             )
 
         logging.info(
@@ -170,8 +177,15 @@ def retrieve_context(log_data: Dict[str, Any]) -> str:
     if not chroma_retriever or not bm25_retriever:
         return "Warning: Could not load retrievers."
 
-    # Use a faster, cheaper text-only LLM for our retrieval sub-tasks
-    retrieval_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.3)
+    # Change model to open AI model running on groq with the same temperaturje as teh previous model
+    retrieval_llm = llm_groq = ChatGroq(
+        model="openai/gpt-oss-120b",
+        temperature=0.3,
+        max_tokens=None,
+        reasoning_format="parsed",
+        timeout=None,
+        max_retries=2,
+    )
 
     # 1. Generate the HyDE query
     hyde_query, error_type = generate_hyde_document(log_data, retrieval_llm)
@@ -182,7 +196,8 @@ def retrieve_context(log_data: Dict[str, Any]) -> str:
             0.3,
             0.7,
         ]  # 30% Keyword, 70% Semantic (We need theory for unknown stuff)
-        logging.info("Dynamic Weighting: Leaning Dense (Semantic) for Unknown Error.")
+        logging.info(
+            "Dynamic Weighting: Leaning Dense (Semantic) for Unknown Error.")
     else:
         weights = [
             0.6,
@@ -226,7 +241,8 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
         with open(error_file_path, "r") as f:
             log_data = json.load(f)
     except FileNotFoundError:
-        logging.error(f"No error log found at '{error_file_path}'. Terminating.")
+        logging.error(
+            f"No error log found at '{error_file_path}'. Terminating.")
         return False
 
     # Fetch hyper-refined context using our beast of a retrieval pipeline
@@ -234,9 +250,13 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
     compact_log = json.dumps(log_data, separators=(",", ":"))
 
     # The main logic LLM, strictly bound to JSON output
-    main_llm = ChatOpenAI(
-        model="gpt-5-mini",
+    main_llm = ChatGroq(
+        model="openai/gpt-oss-120b",
         temperature=0.1,
+        max_tokens=None,
+        reasoning_format="parsed",
+        timeout=None,
+        max_retries=2,
         model_kwargs={"response_format": {"type": "json_object"}},
     )
 
@@ -249,7 +269,8 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
     logging.info(
         "Synthesizing telemetry, analyzing physics, and calculating optimal PID patch..."
     )
-    response = chain.invoke({"failure_log": compact_log, "rag_context": rag_context})
+    response = chain.invoke(
+        {"failure_log": compact_log, "rag_context": rag_context})
 
     try:
         # Safely strip Markdown formatting that LLMs love to sneak in, avoiding syntax errors
