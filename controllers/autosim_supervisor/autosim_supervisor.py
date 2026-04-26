@@ -1,31 +1,34 @@
 from controller import Supervisor, Node
+import json
+import time
 import sys
-import math
+import subprocess
+from typing import Dict, Any, List
+import requests  # ✅ added
 
-# ==========================================
-# Step 1: Initialize Engine & Targets
-# ==========================================
+# --- IMPORT OUR NEW DECOUPLED STACK ---
+from autosim_core import TelemetryTracker, DiagnosticEngine, EpisodeRecorder
+from autosim_skills import DriveToTargetSkill, SkillStatus
+
+# Initialize Webots Supervisor and core components
 supervisor = Supervisor()
 TIME_STEP = int(supervisor.getBasicTimeStep())
 robot_node = supervisor.getFromDef("E_PUCK")
-
 translation_field = robot_node.getField("translation")
 rotation_field = robot_node.getField("rotation")
 
-TARGET = [1.5, 0.6, 0.0]
-MAX_SPEED = 6.28
+TARGET = [0.8, 0.8, 0.0]
 
-# --- INIT PRINTS ---
-print("-" * 60)
-print("Initializing Manual P-Controller Test...")
-print(f"Target Coordinates: X={TARGET[0]}, Y={TARGET[1]}")
-print("-" * 60)
+print("-" * 50)
+print("Initializing AutoSim Skill-Based Autonomy Engine...")
+print("-" * 50)
 
 # ==========================================
-# Step 2: Dynamic Hardware Discovery
+# Step 1: Dynamic Hardware Discovery
 # ==========================================
-actuators = {}
-manifest = {"actuators": []}
+actuators: Dict[str, Any] = {}
+distance_sensors: Dict[str, Any] = {}
+manifest: Dict[str, List[str]] = {"actuators": [], "sensors": []}
 
 num_devices = supervisor.getNumberOfDevices()
 for i in range(num_devices):
@@ -37,6 +40,12 @@ for i in range(num_devices):
         actuators[name] = device
         device.setPosition(float("inf"))
         manifest["actuators"].append(name)
+    elif node_type == Node.DISTANCE_SENSOR:
+        distance_sensors[name] = device
+        device.enable(TIME_STEP)
+        manifest["sensors"].append(name)
+
+supervisor.step(TIME_STEP)
 
 if not actuators:
     print("\n[CRITICAL ERROR] No actuators discovered. Agent is a brick.")
@@ -51,89 +60,258 @@ right_motor_name = next(
     manifest["actuators"][-1],
 )
 
-left_motor = actuators[left_motor_name]
-right_motor = actuators[right_motor_name]
+dt_seconds = TIME_STEP / 1000.0
+telemetry = TelemetryTracker(dt_seconds=dt_seconds, window_size=15)
+diagnostician = DiagnosticEngine()
+episode_recorder = EpisodeRecorder()
 
-# --- HARDWARE PRINTS ---
-print(
-    f"[SYSTEM] Hardware linked. Left: '{left_motor_name}', Right: '{right_motor_name}'"
+# ==========================================
+# Step 2: Save Initial State
+# ==========================================
+# Let the robot drop to the floor and settle for 20 ticks
+for _ in range(20):
+    supervisor.step(TIME_STEP)
+
+robot_node.saveState("tick_0")
+
+current_skill = DriveToTargetSkill(
+    kp=0.5,
+    ki=0.0,
+    kd=0.0,
+    base_speed=3.0,
+    left_motor_name=left_motor_name,
+    right_motor_name=right_motor_name,
 )
-print("[SYSTEM] Starting control loop...\n")
+
+tick = 0
+has_crashed = False
+
+print(f"Simulation started. Executing Skill: {current_skill.__class__.__name__}...")
 
 # ==========================================
-# Step 3: The P-Controller Loop
+# Step 4: Main Physics Execution Loop
 # ==========================================
-# K_rho = 2.5
-# K_alpha = 4.0
-
-step_counter = 0  # Prevents console spam
-
 while supervisor.step(TIME_STEP) != -1:
-    current_pos = translation_field.getSFVec3f()
-    current_rot = rotation_field.getSFRotation()
+    tick += 1
 
-    x = current_pos[0]
-    y = current_pos[1]
+    position = translation_field.getSFVec3f()
+    rotation = rotation_field.getSFRotation()
+    current_motor_vels = [m.getVelocity() for m in actuators.values()]
 
-    current_heading = current_rot[3]
-    if current_rot[2] < 0:
-        current_heading = -current_heading
+    telemetry.record_state(position, rotation, current_motor_vels)
+    current_features = telemetry.get_features(TARGET)
+    episode_recorder.record_tick(position, current_features)
 
-    dx = TARGET[0] - x
-    dy = TARGET[1] - y
-    distance = math.sqrt(dx**2 + dy**2)
-    target_heading = math.atan2(dy, dx)
+    motor_commands = current_skill.step(
+        pos=position,
+        rot=rotation,
+        features=current_features,
+        target=TARGET,
+        dt=dt_seconds,
+        is_telemetry_ready=telemetry.ready,
+    )
 
-    heading_error = target_heading - current_heading
-    heading_error = (heading_error + math.pi) % (2 * math.pi) - math.pi
+    for actuator_name, velocity in motor_commands.items():
+        if actuator_name in actuators:
+            actuators[actuator_name].setVelocity(velocity)
 
-    if distance > 0.02:
-        # forward_velocity = K_rho * distance
-        # rotational_velocity = K_alpha * heading_error
+    is_failure, err_type, err_message = diagnostician.evaluate_state(
+        position, current_features, telemetry.ready, current_motor_vels
+    )
 
-        # left_speed = forward_velocity - rotational_velocity
-        # right_speed = forward_velocity + rotational_velocity
+    skill_status = current_skill.get_status()
+    if skill_status == SkillStatus.FAILURE and not is_failure:
+        is_failure = True
+        err_type = "SkillSelfAbort"
+        err_message = "The skill detected internal instability and aborted execution."
 
-        # left_speed = max(min(left_speed, MAX_SPEED), -MAX_SPEED)
-        # right_speed = max(min(right_speed, MAX_SPEED), -MAX_SPEED)
-
-        # --- NEW CONTROL LAW ---
-        K_rho = 1.0
-        K_alpha = 2.0
-        K_beta = -0.5  # stabilizes final orientation
-
-        beta = -current_heading - heading_error
-
-        forward_velocity = K_rho * distance
-        rotational_velocity = K_alpha * heading_error + K_beta * beta
-
-        left_speed = forward_velocity - rotational_velocity
-        right_speed = forward_velocity + rotational_velocity
-
-        # --- TELEMETRY DASHBOARD (Prints every ~0.3 seconds) ---
-        if step_counter % 10 == 0:
-            # Convert heading error to degrees for easier human reading
-            h_err_deg = math.degrees(heading_error)
-            print(
-                f"Pos: [{x:.3f}, {y:.3f}] | Dist: {distance:.3f}m | H-Err: {h_err_deg:>6.1f}° | Motors: L={left_speed:>5.2f}, R={right_speed:>5.2f}"
-            )
-
-    else:
-        left_speed = 0.0
-        right_speed = 0.0
-
-        # --- SUCCESS PRINT ---
-        print("-" * 60)
-        print(f"[SUCCESS] Target Reached at [{x:.3f}, {y:.3f}].")
-        print(f"Final Error Margin: {distance:.4f}m")
-        print("-" * 60)
-
-        # Stop the motors and break the loop so it doesn't spam the success message forever
-        left_motor.setVelocity(0.0)
-        right_motor.setVelocity(0.0)
+    if skill_status == SkillStatus.SUCCESS:
+        print("\n[OBJECTIVE REACHED] The Skill successfully navigated to the target!")
+        supervisor.simulationSetMode(Supervisor.SIMULATION_MODE_PAUSE)
         break
 
-    left_motor.setVelocity(left_speed)
-    right_motor.setVelocity(right_speed)
+    if not has_crashed and is_failure:
+        has_crashed = True
+        print(f"\n[DIAGNOSTIC TRIGGER] Tick {tick} | Type: {err_type}")
+        print(f"Details: {err_message}")
 
-    step_counter += 1
+        initial_distance = current_features.get("spatial", {}).get(
+            "distance_to_goal_m", float("inf")
+        )
+
+        for name, motor in actuators.items():
+            motor.setVelocity(0)
+
+        failed_attempts: List[Dict[str, Any]] = []
+        MAX_RETRIES = 5
+        mission_accomplished = False
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            print(f"\nInitiating tuning phase: Attempt {attempt} of {MAX_RETRIES}...")
+
+            current_sensor_readings = {
+                name: sensor.getValue() for name, sensor in distance_sensors.items()
+            }
+
+            log = {
+                "timestamp": time.time(),
+                "error_type": err_type,
+                "message": err_message,
+                "current_parameters": {
+                    "kp": current_skill.kp,
+                    "ki": current_skill.ki,
+                    "kd": current_skill.kd,
+                    "base_speed": current_skill.base_speed,
+                },
+                "heading_data": {
+                    "current_heading_deg": current_features.get("spatial", {}).get(
+                        "current_heading", 0
+                    ),
+                    "target_heading_deg": current_features.get("spatial", {}).get(
+                        "target_heading", 0
+                    ),
+                },
+                "mission_objective": {
+                    "goal": "reach_target",
+                    "target_position": TARGET,
+                },
+                "hardware_manifest": manifest,
+                "current_crash_state": {
+                    "raw_position": {
+                        "x": position[0],
+                        "y": position[1],
+                        "z": position[2],
+                    },
+                    "sensor_data": current_sensor_readings,
+                },
+                "engineered_features": current_features,
+                "episode_summary": episode_recorder.get_summary(initial_distance),
+                "failed_attempts": failed_attempts,
+            }
+
+            with open("auto_failure_log.json", "w") as f:
+                json.dump(log, f, indent=4)
+
+            try:
+                # ✅ REPLACED subprocess WITH API CALL
+                response = requests.post(
+                    "http://127.0.0.1:8000/brain", json={"log": log}, timeout=60
+                )
+                response.raise_for_status()
+                command = response.json()
+
+                tuning_params = command.get("target_parameters", {})
+                print(f"AI Reasoning: {command.get('reasoning')}")
+                print(f"Applying new Skill Parameters: {tuning_params}")
+
+                robot_node.loadState("tick_0")
+                # This zeroes out all residual collisions, momentum, and torques.
+                robot_node.resetPhysics()
+                # We MUST command the motors to stop and step the simulation
+                # so Webots visually updates the UI and physically settles the robot.
+                for name, motor in actuators.items():
+                    motor.setPosition(float("inf"))
+                    motor.setVelocity(0.0)
+                # Step the simulation a few times to render the reset on your screen
+                for _ in range(20):
+                    supervisor.step(TIME_STEP)
+                episode_telemetry = TelemetryTracker(
+                    dt_seconds=dt_seconds, window_size=15
+                )
+                episode_recorder.reset()
+
+                current_skill = DriveToTargetSkill(
+                    kp=tuning_params.get("kp", 1.0),
+                    ki=tuning_params.get("ki", 0.0),
+                    kd=tuning_params.get("kd", 0.0),
+                    base_speed=tuning_params.get("base_speed", 3.0),
+                    left_motor_name=left_motor_name,
+                    right_motor_name=right_motor_name,
+                )
+
+                survived_crash = True
+                for t in range(1, 1000):
+                    if supervisor.step(TIME_STEP) == -1:
+                        break
+
+                    test_pos = translation_field.getSFVec3f()
+                    test_rot = rotation_field.getSFRotation()
+                    test_vels = [m.getVelocity() for m in actuators.values()]
+
+                    episode_telemetry.record_state(test_pos, test_rot, test_vels)
+                    test_features = episode_telemetry.get_features(TARGET)
+                    episode_recorder.record_tick(test_pos, test_features)
+
+                    test_motor_commands = current_skill.step(
+                        test_pos,
+                        test_rot,
+                        test_features,
+                        TARGET,
+                        dt_seconds,
+                        is_telemetry_ready=episode_telemetry.ready,
+                    )
+                    for act_name, vel in test_motor_commands.items():
+                        if act_name in actuators:
+                            actuators[act_name].setVelocity(vel)
+
+                    test_fail, test_err, test_msg = diagnostician.evaluate_state(
+                        test_pos, test_features, episode_telemetry.ready, test_vels
+                    )
+                    test_skill_status = current_skill.get_status()
+
+                    if test_fail or test_skill_status == SkillStatus.FAILURE:
+                        survived_crash = False
+                        break
+
+                    if test_skill_status == SkillStatus.SUCCESS:
+                        survived_crash = True
+                        break
+
+                if not survived_crash:
+                    fail_reason = (
+                        test_msg
+                        if test_fail
+                        else "Skill destabilized and self-aborted."
+                    )
+                    print("Outcome A (Failure): Agent triggered another error.")
+                    failed_attempts.append(
+                        {"patch_applied": tuning_params, "failure_reason": fail_reason}
+                    )
+                    continue
+                else:
+                    new_distance = test_features.get("spatial", {}).get(
+                        "distance_to_goal_m", float("inf")
+                    )
+
+                    if test_skill_status == SkillStatus.SUCCESS:
+                        print("Outcome C (Absolute Success)")
+                        mission_accomplished = True
+                        break
+                    elif new_distance >= initial_distance:
+                        print("Outcome B (Suboptimal)")
+                        failed_attempts.append(
+                            {
+                                "patch_applied": tuning_params,
+                                "failure_reason": "Distance increased.",
+                            }
+                        )
+                        continue
+                    else:
+                        print("Outcome C (Partial Success)")
+                        mission_accomplished = True
+                        break
+
+            except Exception as e:
+                print(f"Error: API call failed: {e}")
+                break
+
+        if mission_accomplished:
+            print("-" * 50)
+            print("Mission Tuning Accomplished.")
+            has_crashed = False
+            # supervisor.simulationSetMode(Supervisor.SIMULATION_MODE_PAUSE)
+            continue
+        else:
+            print("\nCritical Failure: AI exhausted retries.")
+            supervisor.simulationSetMode(Supervisor.SIMULATION_MODE_PAUSE)
+            break

@@ -1,12 +1,12 @@
 {
-    "timestamp": 1777066912.0306156,
-    "error_type": "SevereDrift",
-    "message": "Agent drifted off course! Heading deviation exceeded 20 degrees (Alignment: 0.61).",
+    "timestamp": 1777175935.6304371,
+    "error_type": "KineticStagnation",
+    "message": "Motors are driving (Effort: 10.08), but speed is negligible. Agent is stuck.",
     "current_parameters": {
-        "kp": 0.5,
+        "kp": 0.6,
         "ki": 0.0,
         "kd": 0.0,
-        "base_speed": 3.0
+        "base_speed": 4.5
     },
     "heading_data": {
         "current_heading_deg": 0,
@@ -38,45 +38,62 @@
     },
     "current_crash_state": {
         "raw_position": {
-            "x": 0.1823488662093592,
-            "y": 0.09817623957649016,
-            "z": -7.252105629090497e-05
+            "x": 0.15269587979597948,
+            "y": 0.10170429056836289,
+            "z": -0.00013676807397682011
         },
         "sensor_data": {
-            "ps0": 68.88363469423108,
-            "ps1": 67.96822811360045,
-            "ps2": 59.91759350751059,
-            "ps3": 70.44373551592953,
-            "ps4": 67.7424801385245,
-            "ps5": 61.935876407789614,
-            "ps6": 71.86714751410004,
-            "ps7": 62.97697019426108
+            "ps0": 67.93520466652288,
+            "ps1": 63.874942387277464,
+            "ps2": 63.89527605199901,
+            "ps3": 60.213860911734294,
+            "ps4": 67.62909426605397,
+            "ps5": 67.27249393096105,
+            "ps6": 66.37628189975928,
+            "ps7": 69.7482531874856
         }
     },
     "engineered_features": {
         "kinematics": {
-            "speed_m_s": 0.056,
-            "acceleration_m_s2": 0.1251,
-            "jerk_m_s3": 0.0459
+            "speed_m_s": 0.005,
+            "acceleration_m_s2": 0.077,
+            "jerk_m_s3": 0.953
         },
         "spatial": {
-            "distance_to_goal_m": 0.9349,
-            "target_alignment_score": 0.608
+            "distance_to_goal_m": 0.9522,
+            "target_alignment_score": 0.146
         },
         "system_health": {
-            "actuator_effort_penalty": 3.0899,
-            "rotational_volatility": 0.109728
+            "actuator_effort_penalty": 5.1391,
+            "rotational_volatility": 0.043524
         }
     },
     "episode_summary": {
-        "episode_duration_ticks": 15,
-        "final_distance_to_target_m": 0.935,
+        "episode_duration_ticks": 23,
+        "final_distance_to_target_m": 0.952,
         "extremes": {
-            "max_speed_m_s": 0.056,
-            "max_jerk_m_s3": 59.373,
-            "max_wobble": 1.325
+            "max_speed_m_s": 0.027,
+            "max_jerk_m_s3": 39.278,
+            "max_wobble": 1.643
         },
-        "trajectory_breadcrumbs": []
+        "trajectory_breadcrumbs": [
+            [
+                20,
+                0.151,
+                0.101,
+                -0.0
+            ]
+        ]
     },
-    "failed_attempts": []
+    "failed_attempts": [
+        {
+            "patch_applied": {
+                "kp": 0.6,
+                "ki": 0.0,
+                "kd": 0.0,
+                "base_speed": 4.5
+            },
+            "failure_reason": "Motors are driving (Effort: 12.56), but speed is negligible. Agent is stuck."
+        }
+    ]
 }

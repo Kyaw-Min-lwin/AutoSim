@@ -59,17 +59,19 @@ class DifferentialDriveController:
 
         # 3. Calculate rotational adjustment
         turn_rate = (
-            (self.kp * error_rad) + (self.ki * self.integral) + (self.kd * derivative)
+            (self.kp * error_rad * self.max_motor_speed)
+            + (self.ki * self.integral)
+            + (self.kd * derivative)
         )
 
-        # CRITIQUE 3 FIX: Clamp the turn rate BEFORE blending.
         # This prevents a massive turn rate from entirely swallowing proportional control.
         turn_rate = max(-self.max_motor_speed, min(self.max_motor_speed, turn_rate))
 
-        # CRITIQUE 7 FIX: Sanitize the base speed.
-        safe_base_speed = max(
-            -self.max_motor_speed, min(self.max_motor_speed, base_speed)
-        )
+        # CRITIQUE 7 FIX: Sanitize the base speed. prevents wide arcs.
+        alignment_factor = max(0.0, math.cos(error_rad))
+        safe_base_speed = base_speed * alignment_factor
+        turn_intensity = min(1.0, abs(turn_rate) / self.max_motor_speed)
+        safe_base_speed *= 1.0 - 0.7 * turn_intensity
 
         # 4. Differential Drive Kinematics (Blending)
         left_vel = safe_base_speed + turn_rate

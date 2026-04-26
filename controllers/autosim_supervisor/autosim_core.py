@@ -134,9 +134,11 @@ class DiagnosticEngine:
     def __init__(self):
         self.boundary_limit = 0.95
         self.min_speed = 0.03
-        self.drift_speed_min = 0.05
-        # 0.94 represents roughly a 20-degree maximum deviation before failing.
-        self.strict_alignment_min = 0.94
+        self.drift_speed_min = 0.15
+        self.soft_alignment_min = 0.5  # ~60°
+        self.bad_alignment_min = 0.0  # perpendicular threshold
+        self.drift_persistence = 5  # frames before triggering
+        self.drift_counter = 0
         self.max_wobble = 0.5
         self.max_jerk = 50.0
         self.stuck_effort_min = 0.6
@@ -184,12 +186,20 @@ class DiagnosticEngine:
                 f"Motors are driving (Effort: {current_effort:.2f}), but speed is negligible. Agent is stuck.",
             )
 
-        if alignment < self.strict_alignment_min and speed > self.drift_speed_min:
-            print(f"------ ALignment: {alignment}, Speed: {speed}------")
+        # --- Severe Drift Detection ---
+        is_moving = speed > self.drift_speed_min
+        is_bad_direction = alignment < self.bad_alignment_min  # moving sideways or away
+
+        if is_moving and is_bad_direction:
+            self.drift_counter += 1
+        else:
+            self.drift_counter = 0
+
+        if self.drift_counter >= self.drift_persistence:
             return (
                 True,
                 "SevereDrift",
-                f"Agent drifted off course! Heading deviation exceeded 20 degrees (Alignment: {alignment:.2f}).",
+                f"Agent is moving in the wrong direction (Alignment: {alignment:.2f}, Speed: {speed:.2f}).",
             )
 
         if h.get("rotational_volatility", 0) > self.max_wobble:

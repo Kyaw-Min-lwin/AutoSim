@@ -3,7 +3,6 @@ import os
 import pickle
 import logging
 from typing import Dict, Any, List, Tuple
-# Note to add groq and google ai studio api keys to .env file
 from langchain_groq import ChatGroq
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
