@@ -61,6 +61,9 @@ class DriveToTargetSkill(Skill):
             kp=kp, ki=ki, kd=kd, max_motor_speed=max_safe_speed
         )
 
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
         self.base_speed = base_speed
         self.distance_threshold = distance_threshold
         self.max_safe_speed = max_safe_speed
@@ -101,6 +104,7 @@ class DriveToTargetSkill(Skill):
         if not features or not pos or len(pos) < 2 or not target or len(target) < 2:
             return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
 
+        dist = features.get("spatial", {}).get("distance_to_goal_m", float("inf"))
         # Self-Reporting Failure
         if is_telemetry_ready:
             # If the skill realizes it is violently unstable, it aborts itself.
@@ -110,7 +114,6 @@ class DriveToTargetSkill(Skill):
                 return {self.left_motor_name: 0.0, self.right_motor_name: 0.0}
 
             # 2. Check Objective Success
-            dist = features.get("spatial", {}).get("distance_to_goal_m", float("inf"))
             if dist < self.distance_threshold:
                 self.status = SkillStatus.SUCCESS
                 # Send a stop command as the final action

@@ -83,6 +83,8 @@ Identify the root cause of the failure and output ONLY a valid JSON object with:
 
 Rules:
 - Do NOT output anything except valid JSON.
+- CRITICAL: Look at the 'current_parameters' in the log. 
+- Note: Webots e-puck max motor velocity is roughly 6.28. A base_speed below 1.0 will likely cause KineticStagnation.
 - Currently, the only available skill is "DriveToTargetSkill".
 - CRITICAL: Read the 'error_type' and 'message' from the diagnostic engine.
     - If 'DynamicInstability' (wobble) or 'Thrashing', you MUST reduce 'kp' and increase 'kd'.
@@ -231,19 +233,9 @@ def retrieve_context(log_data: Dict[str, Any]) -> str:
 # ==========================================
 # 4. MAIN EXECUTION (The Systems Engineer)
 # ==========================================
-def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
-    """Main execution flow to act as the Systems Engineer."""
-    print("=" * 60)
-    print("🧠 INITIATING AUTO-SIM RAG DEBUGGER (HyDE ENHANCED)")
-    print("=" * 60)
-
-    try:
-        with open(error_file_path, "r") as f:
-            log_data = json.load(f)
-    except FileNotFoundError:
-        logging.error(
-            f"No error log found at '{error_file_path}'. Terminating.")
-        return False
+def run_debugger_brain(log_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Main execution flow to act as the Systems Engineer via API."""
+    logging.info("🧠 INITIATING AUTO-SIM RAG DEBUGGER (HyDE ENHANCED)")
 
     # Fetch hyper-refined context using our beast of a retrieval pipeline
     rag_context = retrieve_context(log_data)
@@ -273,7 +265,7 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
         {"failure_log": compact_log, "rag_context": rag_context})
 
     try:
-        # Safely strip Markdown formatting that LLMs love to sneak in, avoiding syntax errors
+        # Safely strip Markdown formatting
         clean_content = response.content.strip()
         if clean_content.startswith("```json"):
             clean_content = clean_content[7:]
@@ -288,28 +280,14 @@ def run_debugger_brain(error_file_path: str = "auto_failure_log.json") -> bool:
         assert "selected_skill" in result
         assert "reasoning" in result
 
+        logging.info(f"✅ SKILL PATCH GENERATED: {result['reasoning']}")
+        return result
+
     except Exception as e:
         logging.error(f"Malformed LLM Response: {e}")
-        # Explicit error state to prevent Webots infinite loops!
-        error_command = {
+        # Explicit error state to return to the API
+        return {
             "error": True,
-            "reasoning": "LLM output invalid. Retry required.",
+            "reasoning": f"LLM output invalid or crashed. Error: {str(e)}",
+            "target_parameters": {},
         }
-        with open("adjustment_command.json", "w") as f:
-            json.dump(error_command, f, indent=4)
-        return False
-
-    with open("adjustment_command.json", "w") as f:
-        json.dump(result, f, indent=4)
-
-    print("-" * 60)
-    print(f"✅ SKILL PATCH GENERATED")
-    print(f"Reasoning: {result['reasoning']}")
-    print(f"Parameters: {result['target_parameters']}")
-    print("Command saved to 'adjustment_command.json'. Supervisor ready for restart.")
-    print("=" * 60)
-    return True
-
-
-if __name__ == "__main__":
-    run_debugger_brain()
